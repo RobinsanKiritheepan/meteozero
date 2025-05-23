@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import os
 
 app = Flask(__name__)
@@ -14,126 +14,195 @@ collection = db["temperatures_zero"]
 def index():
     return """
     <!DOCTYPE html>
-    <html lang='fr'>
+    <html lang="fr">
     <head>
-        <meta charset='utf-8'>
-        <meta name='viewport' content='width=device-width, initial-scale=1'>
-        <title>Station ZÉRO – Dashboard</title>
-        <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Dashboard Température ZÉRO</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
         <style>
             body {
-                background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
-                color: white;
                 font-family: 'Segoe UI', sans-serif;
-                margin: 0;
-                padding: 0;
+                background: #0f0f0f;
+                color: #fff;
             }
-            .container {
-                padding: 2rem;
+            .card-gradient {
+                background: linear-gradient(135deg, #2c3e50 0%, #9b59b6 100%);
+                border: none;
+                border-radius: 15px;
+                box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+                transition: transform 0.3s;
             }
-            .thermo-wrapper {
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 250px;
-                position: relative;
-                background-color: #111;
-                border-radius: 20px;
-                box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            .card-gradient:hover {
+                transform: translateY(-5px);
             }
-            .glass-thermo {
-                width: 60px;
-                height: 200px;
-                background: linear-gradient(to top, #2e2e2e, #444);
-                border-radius: 30px;
-                position: relative;
-                overflow: hidden;
-                box-shadow: inset 0 0 20px rgba(255,255,255,0.1);
+            .chart-container {
+                background: #1a1a1a;
+                border-radius: 15px;
+                padding: 20px;
             }
-            .glass-thermo::after {
-                content: '';
-                position: absolute;
-                bottom: 0;
-                width: 100%;
-                height: 0%;
-                background: linear-gradient(to top, #ff4e50, #f9d423);
-                animation: fill 1s ease forwards;
-                transition: height 0.5s ease;
-                z-index: 1;
-                border-radius: 30px 30px 0 0;
-            }
-            .temp-text {
-                position: absolute;
-                bottom: 10px;
-                font-size: 2rem;
-                font-weight: bold;
-                color: white;
-                text-shadow: 0 0 10px rgba(255,255,255,0.5);
-            }
-            .status {
-                margin-top: 1rem;
-                text-align: center;
-                font-size: 1rem;
-            }
-            .average-box {
-                margin-top: 2rem;
-                background-color: #222;
-                padding: 1rem;
+            .alert {
                 border-radius: 12px;
-                text-align: center;
-                font-size: 1.2rem;
-                box-shadow: 0 0 10px rgba(0,0,0,0.4);
+                font-size: 0.95rem;
             }
         </style>
     </head>
     <body>
-    <div class='container'>
-        <h1 class='text-center mb-4'>🌡️ Station Météo ZÉRO</h1>
-        <div class='thermo-wrapper'>
-            <div class='glass-thermo' id='thermometer'></div>
-            <div class='temp-text' id='temp'>--°C</div>
+    <nav class="navbar navbar-dark bg-black mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-thermometer-half me-2"></i>Station ZÉRO – Pi Zero 2 W
+            </a>
         </div>
-        <div class='status' id='status-info'>Chargement...</div>
-        <div class='average-box' id='avg-box'>📊 Moyenne 24h : --°C</div>
+    </nav>
+
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-md-4 mb-3">
+                <div class="card card-gradient text-white">
+                    <div class="card-body text-center py-4">
+                        <h3 class="mb-3"><i class="fas fa-fire me-2"></i>Température Actuelle</h3>
+                        <div class="display-2 fw-bold mb-2" id="temp">--</div>
+                        <div class="text-white-50 small" id="status">
+                            <i class="fas fa-sync fa-spin"></i> Connexion...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="chart-container">
+                    <canvas id="chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-info mt-4" id="help-box">
+            <strong>🔧 Connexion initiale du Raspberry Pi Zero :</strong><br>
+            Connecte-toi au Wi-Fi via l'interface BLE, ou démarre le script météo automatique.<br><br>
+            <div id="status-info">⏳ En attente de connexion...</div>
+        </div>
     </div>
 
     <script>
-        async function update() {
-            try {
-                const [latestRes, avgRes] = await Promise.all([
-                    fetch('/latest'),
-                    fetch('/average')
-                ]);
-                const latest = await latestRes.json();
-                const avg = await avgRes.json();
+    const ctx = document.getElementById('chart').getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(155, 89, 182, 0.6)');
+    gradient.addColorStop(1, 'rgba(155, 89, 182, 0.05)');
 
-                const temp = latest.temp !== null ? latest.temp.toFixed(1) : '--';
-                const status = latest.status || "unknown";
-                document.getElementById('temp').innerText = temp + '°C';
-
-                const percent = Math.min(100, Math.max(0, (temp / 100) * 100));
-                document.querySelector('.glass-thermo::after');
-                document.querySelector('.glass-thermo').style.setProperty('--fill-height', percent + '%');
-                document.querySelector('.glass-thermo').style.setProperty('height', percent + '%');
-
-                const statusText = {
-                    "ok": "✅ Température à jour",
-                    "offline": "❌ Capteur hors ligne",
-                    "no_data": "⚠️ Aucune donnée reçue",
-                    "ble": "📶 Attente config BLE",
-                    "wifi": "📡 Attente capteur",
-                    "erreur_capteur": "⚠️ Capteur non détecté",
-                    "unknown": "❓ État inconnu"
-                };
-                document.getElementById('status-info').innerText = statusText[status] || statusText["unknown"];
-                document.getElementById('avg-box').innerText = `📊 Moyenne 24h : ${avg.average !== null ? avg.average.toFixed(1) + '°C' : '--°C'}`;
-            } catch (err) {
-                document.getElementById('status-info').innerText = '❌ Erreur de connexion';
-                document.getElementById('avg-box').innerText = '📊 Moyenne 24h : --°C';
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Température (°C)',
+                data: [],
+                borderColor: '#9b59b6',
+                backgroundColor: gradient,
+                borderWidth: 3,
+                pointRadius: 0,
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,0.9)',
+                    titleFont: { size: 16 },
+                    bodyFont: { size: 14 },
+                    callbacks: {
+                        title: (items) => `Temps: ${items[0].label}s`,
+                        label: (item) => `→ ${item.formattedValue}°C`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.1)' },
+                    ticks: { color: '#fff' },
+                    title: {
+                        display: true,
+                        text: 'Temps (secondes)',
+                        color: '#fff'
+                    }
+                },
+                y: {
+                    min: 0,
+                    max: 100,
+                    grid: { color: 'rgba(255,255,255,0.1)' },
+                    ticks: { color: '#fff' },
+                    title: {
+                        display: true,
+                        text: 'Température (°C)',
+                        color: '#fff'
+                    }
+                }
             }
         }
-        setInterval(update, 1000);
-        update();
+    });
+
+    let history = [];
+
+    async function update() {
+        try {
+            const response = await fetch('/latest');
+            const data = await response.json();
+
+            const statusText = {
+                "ble": "📶 En attente de configuration Wi-Fi via BLE...",
+                "wifi": "📡 Connecté au Wi-Fi, attente du capteur...",
+                "ok": "✅ Température à jour",
+                "offline": "❌ Capteur déconnecté du réseau",
+                "no_data": "⚠️ Aucune donnée reçue encore",
+                "erreur_capteur": "⚠️ Capteur non détecté (SPI)",
+                "unknown": "❓ État inconnu"
+            };
+
+            const statusColor = {
+                "ok": "text-success",
+                "ble": "text-warning",
+                "wifi": "text-warning",
+                "erreur_capteur": "text-danger",
+                "offline": "text-danger",
+                "no_data": "text-warning",
+                "unknown": "text-secondary"
+            };
+
+            const status = data.status || "unknown";
+
+            if (status === "offline" || status === "no_data") {
+                document.getElementById('temp').innerHTML = "--";
+            } else if (data.temp !== null && data.temp !== undefined) {
+                document.getElementById('temp').innerHTML = `${data.temp.toFixed(1)}<small class="fs-6">°C</small>`;
+            }
+
+            if (status === "ok") {
+                history.push(data.temp);
+                if (history.length > 120) history.shift();
+                chart.data.labels = Array.from({ length: history.length }, (_, i) => i);
+                chart.data.datasets[0].data = history;
+                chart.update();
+            }
+
+            document.getElementById('status-info').innerHTML = statusText[status] || "❓ État non reconnu";
+            const statusEl = document.getElementById('status');
+            statusEl.innerHTML = `<i class="fas fa-circle me-1"></i> ${new Date().toLocaleTimeString()}`;
+            statusEl.className = `text-white-50 small ${statusColor[status] || ''}`;
+        } catch (error) {
+            document.getElementById('status').innerHTML = `
+                <i class="fas fa-exclamation-triangle text-danger"></i> Erreur de connexion
+            `;
+            document.getElementById('status-info').innerHTML = "❌ Serveur injoignable ou Pi Zero hors ligne.";
+        }
+    }
+
+    setInterval(update, 1000);
+    update();
     </script>
     </body>
     </html>
@@ -170,7 +239,10 @@ def latest_temp():
         last_time = last_time.replace(tzinfo=timezone.utc)
     age = (now - last_time).total_seconds()
 
-    status = "offline" if age > 5 else doc.get("status", "unknown")
+    if age > 5:
+        status = "offline"
+    else:
+        status = doc.get("status", "unknown")
 
     return jsonify({
         "temp": doc.get("temp", 0),
@@ -178,15 +250,6 @@ def latest_temp():
         "timestamp": last_time.isoformat(),
         "age_seconds": age
     })
-
-@app.route("/average", methods=["GET"])
-def average_temp():
-    since = datetime.now(timezone.utc) - timedelta(hours=24)
-    docs = list(collection.find({"timestamp": {"$gte": since}, "temp": {"$ne": None}}))
-    if not docs:
-        return jsonify({"average": None})
-    avg = sum(d["temp"] for d in docs) / len(docs)
-    return jsonify({"average": avg})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10001)
