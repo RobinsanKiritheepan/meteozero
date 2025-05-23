@@ -20,7 +20,6 @@ def index():
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Dashboard Température ZÉRO</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
         <style>
             body {
@@ -38,10 +37,36 @@ def index():
             .card-gradient:hover {
                 transform: translateY(-5px);
             }
-            .chart-container {
+            .thermometer-container {
                 background: #1a1a1a;
                 border-radius: 15px;
                 padding: 20px;
+                text-align: center;
+                height: 240px;
+                position: relative;
+            }
+            .thermometer {
+                margin: auto;
+                position: relative;
+                width: 40px;
+                height: 180px;
+                background: #333;
+                border-radius: 20px;
+                overflow: hidden;
+            }
+            .mercury {
+                position: absolute;
+                bottom: 0;
+                width: 100%;
+                background: linear-gradient(to top, #e74c3c, #ff7675);
+                height: 0%;
+                transition: height 0.5s ease;
+            }
+            .temp-label {
+                margin-top: 10px;
+                font-size: 1.5rem;
+                font-weight: bold;
+                color: #fff;
             }
             .alert {
                 border-radius: 12px;
@@ -73,81 +98,28 @@ def index():
             </div>
 
             <div class="col-md-8">
-                <div class="chart-container">
-                    <canvas id="chart"></canvas>
+                <div class="thermometer-container">
+                    <div class="thermometer">
+                        <div class="mercury" id="mercury-bar"></div>
+                    </div>
+                    <div class="temp-label" id="thermo-value">--°C</div>
                 </div>
             </div>
         </div>
 
         <div class="alert alert-info mt-4" id="help-box">
             <strong>🔧 Connexion initiale du Raspberry Pi Zero :</strong><br>
-            Connecte-toi au Wi-Fi via l'interface BLE, ou démarre le script météo automatique.<br><br>
+            1. Depuis ton téléphone, va dans <strong>Réglages Wi-Fi</strong><br>
+            2. Connecte-toi au réseau <code>MeteoConfig</code> (aucun mot de passe)<br>
+            3. Une fois connecté, ouvre un navigateur et entre l’adresse :<br>
+            <a href="http://192.168.4.1:5000" target="_blank">http://192.168.4.1:5000</a><br>
+            4. Renseigne le SSID et mot de passe de ton Wi-Fi<br>
+            5. Clique sur “Valider” pour que le Pi Zero se connecte automatiquement<br><br>
             <div id="status-info">⏳ En attente de connexion...</div>
         </div>
     </div>
 
     <script>
-    const ctx = document.getElementById('chart').getContext('2d');
-    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-    gradient.addColorStop(0, 'rgba(155, 89, 182, 0.6)');
-    gradient.addColorStop(1, 'rgba(155, 89, 182, 0.05)');
-
-    const chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Température (°C)',
-                data: [],
-                borderColor: '#9b59b6',
-                backgroundColor: gradient,
-                borderWidth: 3,
-                pointRadius: 0,
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: 'rgba(0,0,0,0.9)',
-                    titleFont: { size: 16 },
-                    bodyFont: { size: 14 },
-                    callbacks: {
-                        title: (items) => `Temps: ${items[0].label}s`,
-                        label: (item) => `→ ${item.formattedValue}°C`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#fff' },
-                    title: {
-                        display: true,
-                        text: 'Temps (secondes)',
-                        color: '#fff'
-                    }
-                },
-                y: {
-                    min: 0,
-                    max: 100,
-                    grid: { color: 'rgba(255,255,255,0.1)' },
-                    ticks: { color: '#fff' },
-                    title: {
-                        display: true,
-                        text: 'Température (°C)',
-                        color: '#fff'
-                    }
-                }
-            }
-        }
-    });
-
-    let history = [];
-
     async function update() {
         try {
             const response = await fetch('/latest');
@@ -177,16 +149,15 @@ def index():
 
             if (status === "offline" || status === "no_data") {
                 document.getElementById('temp').innerHTML = "--";
+                document.getElementById('thermo-value').innerText = "--°C";
+                document.getElementById('mercury-bar').style.height = "0%";
             } else if (data.temp !== null && data.temp !== undefined) {
-                document.getElementById('temp').innerHTML = `${data.temp.toFixed(1)}<small class="fs-6">°C</small>`;
-            }
+                const temp = data.temp.toFixed(1);
+                document.getElementById('temp').innerHTML = `${temp}<small class="fs-6">°C</small>`;
+                document.getElementById('thermo-value').innerText = `${temp}°C`;
 
-            if (status === "ok") {
-                history.push(data.temp);
-                if (history.length > 120) history.shift();
-                chart.data.labels = Array.from({ length: history.length }, (_, i) => i);
-                chart.data.datasets[0].data = history;
-                chart.update();
+                let percent = Math.min(100, Math.max(0, (temp / 100) * 100));
+                document.getElementById('mercury-bar').style.height = `${percent}%`;
             }
 
             document.getElementById('status-info').innerHTML = statusText[status] || "❓ État non reconnu";
@@ -239,10 +210,7 @@ def latest_temp():
         last_time = last_time.replace(tzinfo=timezone.utc)
     age = (now - last_time).total_seconds()
 
-    if age > 5:
-        status = "offline"
-    else:
-        status = doc.get("status", "unknown")
+    status = "offline" if age > 5 else doc.get("status", "unknown")
 
     return jsonify({
         "temp": doc.get("temp", 0),
