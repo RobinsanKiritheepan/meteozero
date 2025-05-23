@@ -14,172 +14,109 @@ collection = db["temperatures_zero"]
 def index():
     return """
     <!DOCTYPE html>
-    <html lang=\"fr\">
+    <html lang='fr'>
     <head>
-        <meta charset=\"utf-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-        <title>Dashboard Température ZÉRO</title>
-        <link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css\" rel=\"stylesheet\">
-        <link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css\">
+        <meta charset='utf-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        <title>Station ZÉRO – Dashboard</title>
+        <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>
         <style>
             body {
+                background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
+                color: white;
                 font-family: 'Segoe UI', sans-serif;
-                background: #0f0f0f;
-                color: #fff;
+                margin: 0;
+                padding: 0;
             }
-            .card-gradient {
-                background: linear-gradient(135deg, #2c3e50 0%, #9b59b6 100%);
-                border: none;
-                border-radius: 15px;
-                box-shadow: 0 10px 20px rgba(0,0,0,0.2);
-                transition: transform 0.3s;
+            .container {
+                padding: 2rem;
             }
-            .card-gradient:hover {
-                transform: translateY(-5px);
-            }
-            .thermometer-container {
-                background: #1a1a1a;
-                border-radius: 15px;
-                padding: 40px;
-                text-align: center;
-                height: 260px;
-                position: relative;
+            .thermo-wrapper {
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                flex-direction: column;
-            }
-            .thermometer {
+                height: 250px;
                 position: relative;
-                width: 40px;
-                height: 180px;
-                background: #444;
+                background-color: #111;
                 border-radius: 20px;
-                overflow: hidden;
-                box-shadow: inset 0 0 10px #00000055;
-                animation: pulse 2s infinite ease-in-out;
+                box-shadow: 0 0 20px rgba(0,0,0,0.5);
             }
-            .mercury {
+            .glass-thermo {
+                width: 60px;
+                height: 200px;
+                background: linear-gradient(to top, #2e2e2e, #444);
+                border-radius: 30px;
+                position: relative;
+                overflow: hidden;
+                box-shadow: inset 0 0 20px rgba(255,255,255,0.1);
+            }
+            .glass-thermo::after {
+                content: '';
                 position: absolute;
                 bottom: 0;
                 width: 100%;
-                background: linear-gradient(to top, #ff3e3e, #ff8787);
                 height: 0%;
-                transition: height 0.6s ease-in-out;
+                background: linear-gradient(to top, #ff4e50, #f9d423);
+                animation: fill 1s ease forwards;
+                transition: height 0.5s ease;
+                z-index: 1;
+                border-radius: 30px 30px 0 0;
             }
-            .temp-label {
-                margin-top: 15px;
+            .temp-text {
+                position: absolute;
+                bottom: 10px;
                 font-size: 2rem;
                 font-weight: bold;
-                color: #fff;
-                text-shadow: 0 0 8px #ff6b6b;
+                color: white;
+                text-shadow: 0 0 10px rgba(255,255,255,0.5);
             }
-            .alert {
-                border-radius: 12px;
-                font-size: 0.95rem;
-            }
-            @keyframes pulse {
-                0%, 100% { box-shadow: 0 0 10px #ff6b6b; }
-                50% { box-shadow: 0 0 20px #ff6b6b; }
+            .status {
+                margin-top: 1rem;
+                text-align: center;
+                font-size: 1rem;
             }
         </style>
     </head>
     <body>
-    <nav class=\"navbar navbar-dark bg-black mb-4\">
-        <div class=\"container-fluid\">
-            <a class=\"navbar-brand\" href=\"#\">
-                <i class=\"fas fa-thermometer-half me-2\"></i>Station ZÉRO – Pi Zero 2 W
-            </a>
+    <div class='container'>
+        <h1 class='text-center mb-4'>🌡️ Station Météo ZÉRO</h1>
+        <div class='thermo-wrapper'>
+            <div class='glass-thermo' id='thermometer'></div>
+            <div class='temp-text' id='temp'>--°C</div>
         </div>
-    </nav>
-
-    <div class=\"container\">
-        <div class=\"row mb-4\">
-            <div class=\"col-md-4 mb-3\">
-                <div class=\"card card-gradient text-white\">
-                    <div class=\"card-body text-center py-4\">
-                        <h3 class=\"mb-3\"><i class=\"fas fa-fire me-2\"></i>Température Actuelle</h3>
-                        <div class=\"display-2 fw-bold mb-2\" id=\"temp\">--</div>
-                        <div class=\"text-white-50 small\" id=\"status\">
-                            <i class=\"fas fa-sync fa-spin\"></i> Connexion...
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class=\"col-md-8\">
-                <div class=\"thermometer-container\">
-                    <div class=\"thermometer\">
-                        <div class=\"mercury\" id=\"mercury-bar\"></div>
-                    </div>
-                    <div class=\"temp-label\" id=\"thermo-value\">--°C</div>
-                </div>
-            </div>
-        </div>
-
-        <div class=\"alert alert-info mt-4\" id=\"help-box\">
-            <strong>🔧 Connexion initiale du Raspberry Pi Zero :</strong><br>
-            1. Depuis ton téléphone, va dans <strong>Réglages Wi-Fi</strong><br>
-            2. Connecte-toi au réseau <code>MeteoConfig</code> (aucun mot de passe)<br>
-            3. Une fois connecté, ouvre un navigateur et entre l’adresse :<br>
-            <a href=\"http://192.168.4.1:5000\" target=\"_blank\">http://192.168.4.1:5000</a><br>
-            4. Renseigne le SSID et mot de passe de ton Wi-Fi<br>
-            5. Clique sur “Valider” pour que le Pi Zero se connecte automatiquement<br><br>
-            <div id=\"status-info\">⏳ En attente de connexion...</div>
-        </div>
+        <div class='status' id='status-info'>Chargement...</div>
     </div>
 
     <script>
-    async function update() {
-        try {
-            const response = await fetch('/latest');
-            const data = await response.json();
+        async function update() {
+            try {
+                const res = await fetch('/latest');
+                const data = await res.json();
+                const temp = data.temp !== null ? data.temp.toFixed(1) : '--';
+                const status = data.status || "unknown";
+                document.getElementById('temp').innerText = temp + '°C';
 
-            const statusText = {
-                "ble": "📶 En attente de configuration Wi-Fi via BLE...",
-                "wifi": "📡 Connecté au Wi-Fi, attente du capteur...",
-                "ok": "✅ Température à jour",
-                "offline": "❌ Capteur déconnecté du réseau",
-                "no_data": "⚠️ Aucune donnée reçue encore",
-                "erreur_capteur": "⚠️ Capteur non détecté (SPI)",
-                "unknown": "❓ État inconnu"
-            };
+                const percent = Math.min(100, Math.max(0, (temp / 100) * 100));
+                document.querySelector('.glass-thermo::after');
+                document.querySelector('.glass-thermo').style.setProperty('--fill-height', percent + '%');
+                document.querySelector('.glass-thermo').style.setProperty('height', percent + '%');
 
-            const statusColor = {
-                "ok": "text-success",
-                "ble": "text-warning",
-                "wifi": "text-warning",
-                "erreur_capteur": "text-danger",
-                "offline": "text-danger",
-                "no_data": "text-warning",
-                "unknown": "text-secondary"
-            };
-
-            const status = data.status || "unknown";
-
-            if (status === "offline" || status === "no_data") {
-                document.getElementById('temp').innerHTML = "--";
-                document.getElementById('thermo-value').innerText = "--°C";
-                document.getElementById('mercury-bar').style.height = "0%";
-            } else if (data.temp !== null && data.temp !== undefined) {
-                const temp = data.temp.toFixed(1);
-                document.getElementById('temp').innerHTML = `${temp}<small class=\"fs-6\">°C</small>`;
-                document.getElementById('thermo-value').innerText = `${temp}°C`;
-                let percent = Math.min(100, Math.max(0, (temp / 100) * 100));
-                document.getElementById('mercury-bar').style.height = `${percent}%`;
+                const statusText = {
+                    "ok": "✅ Température à jour",
+                    "offline": "❌ Capteur hors ligne",
+                    "no_data": "⚠️ Aucune donnée reçue",
+                    "ble": "📶 Attente config BLE",
+                    "wifi": "📡 Attente capteur",
+                    "erreur_capteur": "⚠️ Capteur non détecté",
+                    "unknown": "❓ État inconnu"
+                };
+                document.getElementById('status-info').innerText = statusText[status] || statusText["unknown"];
+            } catch (err) {
+                document.getElementById('status-info').innerText = '❌ Erreur de connexion';
             }
-
-            document.getElementById('status-info').innerHTML = statusText[status] || "❓ État non reconnu";
-            const statusEl = document.getElementById('status');
-            statusEl.innerHTML = `<i class=\"fas fa-circle me-1\"></i> ${new Date().toLocaleTimeString()}`;
-            statusEl.className = `text-white-50 small ${statusColor[status] || ''}`;
-        } catch (error) {
-            document.getElementById('status').innerHTML = `<i class='fas fa-exclamation-triangle text-danger'></i> Erreur de connexion`;
-            document.getElementById('status-info').innerHTML = "❌ Serveur injoignable ou Pi Zero hors ligne.";
         }
-    }
-    setInterval(update, 1000);
-    update();
+        setInterval(update, 1000);
+        update();
     </script>
     </body>
     </html>
