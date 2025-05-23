@@ -38,6 +38,11 @@
             padding: 15px;
             margin-bottom: 15px;
         }
+        .history-table {
+            background: #1a1a1a;
+            border-radius: 10px;
+            padding: 15px;
+        }
     </style>
 </head>
 <body>
@@ -71,11 +76,49 @@
                 <p>Max: <span id="daily-max">--</span>°C</p>
                 <button class="btn btn-sm btn-outline-light" onclick="exportCSV()">Exporter CSV</button>
             </div>
+            <div class="stats-card">
+                <h5>Notifications WhatsApp</h5>
+                <div class="mb-3">
+                    <label for="whatsapp-number" class="form-label">Numéro WhatsApp (+33...)</label>
+                    <input type="text" class="form-control" id="whatsapp-number" placeholder="+33612345678">
+                </div>
+                <div class="mb-3">
+                    <label for="threshold-high" class="form-label">Seuil haut (°C)</label>
+                    <input type="number" class="form-control" id="threshold-high" value="35">
+                </div>
+                <div class="mb-3">
+                    <label for="threshold-low" class="form-label">Seuil bas (°C)</label>
+                    <input type="number" class="form-control" id="threshold-low" value="5">
+                </div>
+                <button class="btn btn-sm btn-primary" onclick="saveNotificationSettings()">Enregistrer</button>
+            </div>
         </div>
 
         <div class="col-md-8">
             <div class="chart-container">
                 <canvas id="chart"></canvas>
+            </div>
+            <div class="history-table mt-3">
+                <h5>Historique des données</h5>
+                <div class="mb-3">
+                    <label for="date-start" class="form-label">Date de début</label>
+                    <input type="date" class="form-control" id="date-start">
+                </div>
+                <div class="mb-3">
+                    <label for="date-end" class="form-label">Date de fin</label>
+                    <input type="date" class="form-control" id="date-end">
+                </div>
+                <button class="btn btn-sm btn-outline-light" onclick="loadHistory()">Charger l'historique</button>
+                <table class="table table-dark mt-3" id="history-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Température (°C)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <button class="btn btn-sm btn-outline-light" onclick="exportHistoryCSV()">Exporter l'historique</button>
             </div>
         </div>
     </div>
@@ -83,7 +126,7 @@
     <div class="alert alert-info mt-4" id="help-box">
         <strong>🔧 Connexion initiale du Raspberry Pi Zero :</strong><br>
         Connecte-toi au Wi-Fi via l'interface BLE, ou démarre le script météo automatique.<br><br>
-        <div id="status-info">殊 En attente de connexion...</div>
+        <div id="status-info">⏳ En attente de connexion...</div>
         <div id="alert-box" class="mt-2"></div>
     </div>
 </div>
@@ -248,6 +291,85 @@ async function exportCSV() {
         window.URL.revokeObjectURL(url);
     } catch (error) {
         alert('Erreur lors de l\'exportation des données');
+    }
+}
+
+async function saveNotificationSettings() {
+    const number = document.getElementById('whatsapp-number').value;
+    const high = parseFloat(document.getElementById('threshold-high').value);
+    const low = parseFloat(document.getElementById('threshold-low').value);
+
+    if (!number || !number.startsWith('+')) {
+        alert('Veuillez entrer un numéro WhatsApp valide avec le code pays (ex: +33612345678)');
+        return;
+    }
+
+    try {
+        const response = await fetch('/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number, threshold_high: high, threshold_low: low })
+        });
+        const result = await response.json();
+        if (result.status === 'ok') {
+            alert('Paramètres de notification enregistrés !');
+        } else {
+            alert('Erreur lors de l\'enregistrement des paramètres.');
+        }
+    } catch (error) {
+        alert('Erreur de connexion au serveur.');
+    }
+}
+
+async function loadHistory() {
+    const start = document.getElementById('date-start').value;
+    const end = document.getElementById('date-end').value;
+
+    if (!start || !end) {
+        alert('Veuillez sélectionner une plage de dates.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/history?start=${start}&end=${end}`);
+        const data = await response.json();
+        const tbody = document.querySelector('#history-table tbody');
+        tbody.innerHTML = '';
+        data.forEach(d => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${new Date(d.timestamp).toLocaleString()}</td><td>${d.temp.toFixed(1)}</td>`;
+            tbody.appendChild(row);
+        });
+    } catch (error) {
+        alert('Erreur lors du chargement de l\'historique.');
+    }
+}
+
+async function exportHistoryCSV() {
+    const start = document.getElementById('date-start').value;
+    const end = document.getElementById('date-end').value;
+
+    if (!start || !end) {
+        alert('Veuillez sélectionner une plage de dates.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/history?start=${start}&end=${end}`);
+        const data = await response.json();
+        const csv = ['Timestamp,Température (°C)'];
+        data.forEach(d => {
+            csv.push(`${d.timestamp},${d.temp}`);
+        });
+        const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `temperature_history_${start}_${end}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        alert('Erreur lors de l\'exportation de l\'historique.');
     }
 }
 
