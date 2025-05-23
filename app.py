@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 
 app = Flask(__name__)
@@ -75,6 +75,15 @@ def index():
                 text-align: center;
                 font-size: 1rem;
             }
+            .average-box {
+                margin-top: 2rem;
+                background-color: #222;
+                padding: 1rem;
+                border-radius: 12px;
+                text-align: center;
+                font-size: 1.2rem;
+                box-shadow: 0 0 10px rgba(0,0,0,0.4);
+            }
         </style>
     </head>
     <body>
@@ -85,15 +94,21 @@ def index():
             <div class='temp-text' id='temp'>--°C</div>
         </div>
         <div class='status' id='status-info'>Chargement...</div>
+        <div class='average-box' id='avg-box'>📊 Moyenne 24h : --°C</div>
     </div>
 
     <script>
         async function update() {
             try {
-                const res = await fetch('/latest');
-                const data = await res.json();
-                const temp = data.temp !== null ? data.temp.toFixed(1) : '--';
-                const status = data.status || "unknown";
+                const [latestRes, avgRes] = await Promise.all([
+                    fetch('/latest'),
+                    fetch('/average')
+                ]);
+                const latest = await latestRes.json();
+                const avg = await avgRes.json();
+
+                const temp = latest.temp !== null ? latest.temp.toFixed(1) : '--';
+                const status = latest.status || "unknown";
                 document.getElementById('temp').innerText = temp + '°C';
 
                 const percent = Math.min(100, Math.max(0, (temp / 100) * 100));
@@ -111,8 +126,10 @@ def index():
                     "unknown": "❓ État inconnu"
                 };
                 document.getElementById('status-info').innerText = statusText[status] || statusText["unknown"];
+                document.getElementById('avg-box').innerText = `📊 Moyenne 24h : ${avg.average !== null ? avg.average.toFixed(1) + '°C' : '--°C'}`;
             } catch (err) {
                 document.getElementById('status-info').innerText = '❌ Erreur de connexion';
+                document.getElementById('avg-box').innerText = '📊 Moyenne 24h : --°C';
             }
         }
         setInterval(update, 1000);
@@ -161,6 +178,15 @@ def latest_temp():
         "timestamp": last_time.isoformat(),
         "age_seconds": age
     })
+
+@app.route("/average", methods=["GET"])
+def average_temp():
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    docs = list(collection.find({"timestamp": {"$gte": since}, "temp": {"$ne": None}}))
+    if not docs:
+        return jsonify({"average": None})
+    avg = sum(d["temp"] for d in docs) / len(docs)
+    return jsonify({"average": avg})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10001)
