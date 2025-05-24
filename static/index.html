@@ -1,4 +1,43 @@
-<!DOCTYPE html>
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="utf-8">
@@ -195,7 +234,6 @@ let history = [];
 let lastTemps = [];
 
 async function update() {
-    console.log("🌀 update() appelé");
     try {
         const response = await fetch('/latest');
         const data = await response.json();
@@ -226,6 +264,7 @@ async function update() {
             document.getElementById('temp').innerHTML = "--";
         } else if (data.temp !== null && data.temp !== undefined) {
             document.getElementById('temp').innerHTML = `${data.temp.toFixed(1)}<small class="fs-6">°C</small>`;
+            
             lastTemps.push(data.temp);
             if (lastTemps.length > 5) lastTemps.shift();
             let trend = "Stable";
@@ -271,8 +310,106 @@ async function update() {
     }
 }
 
-// rafraîchissement auto toutes les 10 secondes
-setInterval(update, 10000);
+async function exportCSV() {
+    try {
+        const response = await fetch('/daily-data');
+        const data = await response.json();
+        const csv = ['Timestamp,Température (°C)'];
+        data.forEach(d => {
+            csv.push(`${d.timestamp},${d.temp}`);
+        });
+        const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'temperature_data.csv';
+        a.click();
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        alert('Erreur lors de l\'exportation des données');
+    }
+}
+
+async function saveNotificationSettings() {
+    const number = document.getElementById('whatsapp-number').value;
+    const high = parseFloat(document.getElementById('threshold-high').value);
+    const low = parseFloat(document.getElementById('threshold-low').value);
+
+    if (!number || !number.startsWith('+')) {
+        alert('Veuillez entrer un numéro WhatsApp valide avec le code pays (ex: +33612345678)');
+        return;
+    }
+
+    try {
+        const response = await fetch('/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number, threshold_high: high, threshold_low: low })
+        });
+        const result = await response.json();
+        if (result.status === 'ok') {
+            alert('Paramètres de notification enregistrés !');
+        } else {
+            alert('Erreur lors de l\'enregistrement des paramètres.');
+        }
+    } catch (error) {
+        alert('Erreur de connexion au serveur.');
+    }
+}
+
+async function loadHistory() {
+    const start = document.getElementById('date-start').value;
+    const end = document.getElementById('date-end').value;
+
+    if (!start || !end) {
+        alert('Veuillez sélectionner une plage de dates.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/history?start=${start}&end=${end}`);
+        const data = await response.json();
+        const tbody = document.querySelector('#history-table tbody');
+        tbody.innerHTML = '';
+        data.forEach(d => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${new Date(d.timestamp).toLocaleString()}</td><td>${d.temp.toFixed(1)}</td>`;
+            tbody.appendChild(row);
+        });
+    } catch (error) {
+        alert('Erreur lors du chargement de l\'historique.');
+    }
+}
+
+async function exportHistoryCSV() {
+    const start = document.getElementById('date-start').value;
+    const end = document.getElementById('date-end').value;
+
+    if (!start || !end) {
+        alert('Veuillez sélectionner une plage de dates.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/history?start=${start}&end=${end}`);
+        const data = await response.json();
+        const csv = ['Timestamp,Température (°C)'];
+        data.forEach(d => {
+            csv.push(`${d.timestamp},${d.temp}`);
+        });
+        const blob = new Blob([csv.join('\n')], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `temperature_history_${start}_${end}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        alert('Erreur lors de l\'exportation de l\'historique.');
+    }
+}
+
+setInterval(update, 60000); // Update every 60 seconds
 update();
 </script>
 </body>
