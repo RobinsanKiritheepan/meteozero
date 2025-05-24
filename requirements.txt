@@ -1,12 +1,5 @@
-<<<<<<< HEAD
 flask==3.1.1
 pymongo==4.13.0
 dnspython==2.7.0
 gunicorn==23.0.0
 twilio==9.3.3
-=======
-flask
-pymongo
-dnspython
-gunicorn
->>>>>>> dc209e1655e30e8bd03d1b250a43ebf74ba11362
